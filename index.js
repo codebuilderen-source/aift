@@ -1,34 +1,27 @@
 const express = require('express');
 const { Pool } = require('pg');
-
 const app = express();
-const port = process.env.PORT || 3000;
 
-// Render에 설정한 DATABASE_URL 환경변수를 사용하여 DB 연결 설정
+// Render 환경변수에 등록한 DATABASE_URL을 사용합니다.
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false // Neon(외부 접속) 연결 시 필수 설정
-  }
+  ssl: { rejectUnauthorized: false }
 });
 
 app.get('/', async (req, res) => {
   try {
-    // aift 테이블에서 name 칼럼 하나를 가져옴 (첫 번째 레코드 기준)
-    const result = await pool.query('SELECT name FROM aift LIMIT 1');
-    
-    if (result.rows.length > 0) {
-      const userName = result.rows[0].name;
-      res.send(`<h1>안녕하세요 ${userName}님</h1>`);
-    } else {
-      res.send('<h1>데이터가 없습니다.</h1>');
-    }
+    // 1. Neon DB에서 'users' 테이블의 'name'을 가져오는 예시
+    const result = await pool.query('SELECT name FROM users LIMIT 1');
+    const userName = result.rows[0] ? result.rows[0].name : "데이터 없음";
+
+    // 2. 화면에 출력
+    res.send(`<h1>안녕하세요! DB에서 가져온 이름: ${userName}</h1>`);
   } catch (err) {
     console.error(err);
-    res.status(500).send('Database connection error');
+    res.status(500).send("DB 연결 오류 발생");
   }
 });
 
-app.listen(port, () => {
-  console.log(`Server is running on port ${port}`);
+app.listen(3000, () => {
+  console.log('Server is running!');
 });
