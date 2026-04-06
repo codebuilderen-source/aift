@@ -19,7 +19,7 @@ app.get('/', async (req, res) => {
     
     if (result.rows.length > 0) {
       const userName = result.rows[0].name;
-      res.send(`<h1>안녕하세요 ${userName}</h1>님`);
+      res.send(`<h1>안녕하세요 ${userName}님</h1>`);
     } else {
       res.send('<h1>데이터가 없습니다.</h1>');
     }
