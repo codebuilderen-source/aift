@@ -1,27 +1,16 @@
-const express = require('express');
-const { Pool } = require('pg');
-const app = express();
+// POST 요청을 처리하기 위한 미들웨어 설정 (index.js 상단)
+app.use(express.urlencoded({ extended: true }));
 
-// Render 환경변수에 등록한 DATABASE_URL을 사용합니다.
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
-});
-
-app.get('/', async (req, res) => {
+// 사용자 추가 라우트
+app.post('/add-user', async (req, res) => {
+  const { username } = req.body;
   try {
-    // 1. Neon DB에서 'users' 테이블의 'name'을 가져오는 예시
-    const result = await pool.query('SELECT name FROM users LIMIT 1');
-    const userName = result.rows[0] ? result.rows[0].name : "데이터 없음";
-
-    // 2. 화면에 출력
-    res.send(`<h1>안녕하세요! DB에서 가져온 이름: ${userName}</h1>`);
+    // Neon DB에 데이터 삽입 (테이블명이 users라고 가정)
+    await pool.query('INSERT INTO users (name) VALUES ($1)', [username]);
+    // 성공 후 메인 페이지로 다시 이동(새로고침 효과)
+    res.redirect('/');
   } catch (err) {
     console.error(err);
-    res.status(500).send("DB 연결 오류 발생");
+    res.send("에러 발생");
   }
-});
-
-app.listen(3000, () => {
-  console.log('Server is running!');
 });
