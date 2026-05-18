@@ -20,7 +20,7 @@ app.get('/', async (req, res) => {
     let userList = result.rows.map(row => `<li>${row.name}</li>`).join('');
 
     res.send(`
-      <h1>🎮 게임 커뮤니티 메인</h1>
+      <h1>커뮤니티 메인</h1>
       <nav>
         <a href="/">홈으로</a> | 
         <a href="/add-user">새 사용자 추가</a> | 
@@ -64,7 +64,7 @@ app.post('/add-user', async (req, res) => {
 app.get('/community', (req, res) => {
   res.send(`
     <h1>게시판 페이지</h1>
-    <p>여기에 게임 평론이나 게시글이 올라올 예정입니다.</p>
+    <p>여기에 추가적기능;아마 사이트 메인과의 분리 예정입니다.</p>
     <a href="/">메인으로 돌아가기</a>
   `);
 });
