@@ -5,7 +5,6 @@ const path = require('path');
 const app = express();
 const port = process.env.PORT || 3000;
 
-// POST 요청의 본문(body)을 해석하기 위한 설정
 app.use(express.urlencoded({ extended: true }));
 
 const pool = new Pool({
@@ -13,7 +12,7 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }
 });
 
-// [공통 로직] 상단 네비게이션 헤더 동적 생성 (게시판 간 이동 및 홈 백링크 제공)
+// [공통 로직] 상단 네비게이션 헤더
 async function getHeaderHTML() {
   try {
     const boardResult = await pool.query('SELECT name, slug FROM boards ORDER BY id ASC');
@@ -33,7 +32,7 @@ async function getHeaderHTML() {
   }
 }
 
-// 1. 메인 페이지: 사용자 목록 출력 및 전체 메뉴 제공
+// 1. 메인 페이지
 app.get('/', async (req, res) => {
   try {
     const header = await getHeaderHTML();
@@ -52,7 +51,7 @@ app.get('/', async (req, res) => {
   }
 });
 
-// 2. 사용자 추가 페이지 (입력 폼)
+// 2. 사용자 추가 페이지
 app.get('/add-user', async (req, res) => {
   const header = await getHeaderHTML();
   res.send(`
@@ -65,7 +64,7 @@ app.get('/add-user', async (req, res) => {
   `);
 });
 
-// 3. 사용자 추가 처리 (DB INSERT)
+// 3. 사용자 추가 처리
 app.post('/add-user', async (req, res) => {
   const { userName } = req.body;
   try {
@@ -76,29 +75,69 @@ app.post('/add-user', async (req, res) => {
   }
 });
 
-// 4. 특정 게시판의 글 목록 보기 (/board/:slug)
-app.get('/board/:slug', async (req, res) => {
+// 4. [신규] 특정 게시판의 추천글(베스트) 목록 보기 (/board/:slug/best)
+app.get('/board/:slug/best', async (req, res) => {
   const { slug } = req.params;
   try {
     const header = await getHeaderHTML();
     
-    // 현재 게시판 정보 가져오기
     const boardResult = await pool.query('SELECT * FROM boards WHERE slug = $1', [slug]);
     if (boardResult.rows.length === 0) return res.status(404).send('존재하지 않는 게시판입니다.');
     const board = boardResult.rows[0];
 
-    // 해당 게시판의 글 목록 가져오기 (최신순)
-    const postResult = await pool.query('SELECT id, title, author, created_at FROM posts WHERE board_id = $1 ORDER BY id DESC', [board.id]);
+    // 추천수(likes)가 10 이상인 글만 가져오기
+    const postResult = await pool.query('SELECT id, title, author, created_at, likes FROM posts WHERE board_id = $1 AND likes >= 10 ORDER BY id DESC', [board.id]);
+    
     let postList = postResult.rows.map(p => `
       <li>
-        <a href="/post/${p.id}"><b>${p.title}</b></a> (작성자: ${p.author}) - <i>${p.created_at.toLocaleDateString()}</i>
+        ⭐ <a href="/post/${p.id}"><b>${p.title}</b></a> 
+        <span style="color:red; font-size:12px;">[추천: ${p.likes}]</span> 
+        (작성자: ${p.author}) - <i>${p.created_at.toLocaleDateString()}</i>
       </li>
     `).join('');
 
     res.send(`
       ${header}
+      <h2>🏆 ${board.name} - 추천 베스트 (10+)</h2>
+      <a href="/board/${slug}"><button>전체글 보기로 돌아가기</button></a>
+      <br><br>
+      <ul>${postList || '아직 추천을 10개 이상 받은 베스트 글이 없습니다.'}</ul>
+    `);
+  } catch (err) {
+    res.status(500).send('추천 게시판 조회 중 오류 발생');
+  }
+});
+
+// 5. 특정 게시판의 전체 글 목록 보기 (/board/:slug)
+app.get('/board/:slug', async (req, res) => {
+  const { slug } = req.params;
+  try {
+    const header = await getHeaderHTML();
+    
+    const boardResult = await pool.query('SELECT * FROM boards WHERE slug = $1', [slug]);
+    if (boardResult.rows.length === 0) return res.status(404).send('존재하지 않는 게시판입니다.');
+    const board = boardResult.rows[0];
+
+    // likes(추천수) 데이터 포함하여 가져오기
+    const postResult = await pool.query('SELECT id, title, author, created_at, likes FROM posts WHERE board_id = $1 ORDER BY id DESC', [board.id]);
+    
+    let postList = postResult.rows.map(p => {
+      // 추천수가 10 이상이면 별 모양 표시
+      const starMark = p.likes >= 10 ? '⭐' : '';
+      return `
+        <li>
+          ${starMark} <a href="/post/${p.id}"><b>${p.title}</b></a> 
+          <span style="font-size:12px; color:gray;">[추천: ${p.likes}]</span>
+          (작성자: ${p.author}) - <i>${p.created_at.toLocaleDateString()}</i>
+        </li>
+      `;
+    }).join('');
+
+    res.send(`
+      ${header}
       <h2>🎈 ${board.name}</h2>
       <a href="/board/${slug}/add"><button>글쓰기</button></a>
+      <a href="/board/${slug}/best"><button style="background-color:#ffd700; border:none; cursor:pointer;">⭐ 베스트글 보기</button></a>
       <br><br>
       <ul>${postList || '게시글이 없습니다. 첫 글을 남겨보세요!'}</ul>
     `);
@@ -107,7 +146,7 @@ app.get('/board/:slug', async (req, res) => {
   }
 });
 
-// 5. 게시글 작성 페이지 (입력 폼)
+// 6. 게시글 작성 페이지
 app.get('/board/:slug/add', async (req, res) => {
   const { slug } = req.params;
   const header = await getHeaderHTML();
@@ -124,7 +163,7 @@ app.get('/board/:slug/add', async (req, res) => {
   `);
 });
 
-// 6. 게시글 작성 처리 (DB INSERT)
+// 7. 게시글 작성 처리
 app.post('/board/:slug/add', async (req, res) => {
   const { slug } = req.params;
   const { author, password, title, content } = req.body;
@@ -142,18 +181,17 @@ app.post('/board/:slug/add', async (req, res) => {
   }
 });
 
-// 7. 게시글 상세보기 및 댓글 출력 (/post/:id)
+// 8. 게시글 상세보기 및 댓글 출력
 app.get('/post/:id', async (req, res) => {
   const { id } = req.params;
   try {
     const header = await getHeaderHTML();
     
-    // 게시글 상세조회
+    // 게시글 상세조회 (likes 포함)
     const postResult = await pool.query('SELECT p.*, b.slug FROM posts p JOIN boards b ON p.board_id = b.id WHERE p.id = $1', [id]);
     if (postResult.rows.length === 0) return res.status(404).send('글을 찾을 수 없습니다.');
     const post = postResult.rows[0];
 
-    // 댓글 목록 조회
     const commentResult = await pool.query('SELECT * FROM comments WHERE post_id = $1 ORDER BY id ASC', [id]);
     let commentList = commentResult.rows.map(c => `
       <div style="border-bottom: 1px dashed #ccc; padding: 5px 0;">
@@ -166,15 +204,27 @@ app.get('/post/:id', async (req, res) => {
       </div>
     `).join('');
 
+    const starMark = post.likes >= 10 ? '⭐ 베스트글!' : '';
+
     res.send(`
       ${header}
       <p><a href="/board/${post.slug}">← 목록으로 돌아가기</a></p>
-      <h2>${post.title}</h2>
-      <p><b>작성자:</b> ${post.author} | <b>작성일:</b> ${post.created_at.toLocaleString()}</p>
+      <h2>${post.title} <span style="color:red; font-size:16px;">${starMark}</span></h2>
+      <p><b>작성자:</b> ${post.author} | <b>작성일:</b> ${post.created_at.toLocaleString()} | <b>추천수:</b> ${post.likes}</p>
+      
       <div style="padding: 15px; border: 1px solid #ccc; min-height:100px; background:#fafafa;">
         ${post.content.replace(/\n/g, '<br>')}
       </div>
       
+      <br>
+      <div style="text-align:center;">
+        <form action="/post/${post.id}/like" method="POST" style="display:inline;">
+          <button type="submit" style="padding: 10px 20px; font-size: 16px; cursor:pointer; background:#e6f7ff; border:1px solid #91d5ff; border-radius:5px;">
+            👍 추천하기 (${post.likes})
+          </button>
+        </form>
+      </div>
+
       <br>
       <form action="/post/${post.id}/delete" method="POST" style="display:inline;">
         <input type="hidden" name="slug" value="${post.slug}">
@@ -199,7 +249,19 @@ app.get('/post/:id', async (req, res) => {
   }
 });
 
-// 8. 게시글 삭제 처리 (비밀번호 확인)
+// 9. [신규] 추천수 증가 처리 라우터
+app.post('/post/:id/like', async (req, res) => {
+  const { id } = req.params;
+  try {
+    // 해당 글의 likes 값을 1 증가시킵니다.
+    await pool.query('UPDATE posts SET likes = likes + 1 WHERE id = $1', [id]);
+    res.redirect(`/post/${id}`);
+  } catch (err) {
+    res.status(500).send('추천 처리 중 오류가 발생했습니다.');
+  }
+});
+
+// 10. 게시글 삭제 처리
 app.post('/post/:id/delete', async (req, res) => {
   const { id } = req.params;
   const { password, slug } = req.body;
@@ -207,7 +269,6 @@ app.post('/post/:id/delete', async (req, res) => {
     const postResult = await pool.query('SELECT password FROM posts WHERE id = $1', [id]);
     if (postResult.rows.length === 0) return res.status(404).send('글이 존재하지 않습니다.');
     
-    // 비밀번호 평문 대조 검증
     if (postResult.rows[0].password === password) {
       await pool.query('DELETE FROM posts WHERE id = $1', [id]);
       res.send(`<script>alert("성공적으로 삭제되었습니다."); location.href="/board/${slug}";</script>`);
@@ -219,7 +280,7 @@ app.post('/post/:id/delete', async (req, res) => {
   }
 });
 
-// 9. 댓글 작성 처리
+// 11. 댓글 작성 처리
 app.post('/post/:id/comment', async (req, res) => {
   const { id } = req.params;
   const { author, password, content } = req.body;
@@ -234,7 +295,7 @@ app.post('/post/:id/comment', async (req, res) => {
   }
 });
 
-// 10. 댓글 삭제 처리 (비밀번호 확인)
+// 12. 댓글 삭제 처리
 app.post('/comment/:id/delete', async (req, res) => {
   const { id } = req.params;
   const { password, postId } = req.body;
