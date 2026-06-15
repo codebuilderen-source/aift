@@ -1,14 +1,19 @@
 {
-  "name": "render-neon-community",
-  "version": "1.2.0",
-  "description": "Pure Community Site Practice",
+  "name": "my-web-project",
+  "version": "1.0.0",
+  "description": "Render, Neon DB, Express Community Site",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
+    "express": "^4.19.2",
     "express-session": "^1.18.0",
-    "pg": "^8.11.3"
-  }
+    "pg": "^8.11.5"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "author": "",
+  "license": "ISC"
 }
