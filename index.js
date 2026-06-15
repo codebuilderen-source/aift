@@ -335,3 +335,35 @@ app.post('/comment/:id/delete', async (req, res) => {
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
 });
+// 게시글 수정 폼 띄우기
+app.get('/board/:slug/post/:id/edit', async (req, res) => {
+  if (!req.session.user) {
+    return res.send('<script>alert("로그인이 필요합니다."); window.location.href="/";</script>');
+  }
+
+  try {
+    const { id } = req.params;
+    const result = await pool.query('SELECT * FROM posts WHERE id = $1', [id]);
+    const post = result.rows[0];
+
+    // 로그인된 사람의 user_id와 글의 user_id가 일치하는지 서버가 직접 판별 
+    if (post.user_id !== req.session.user.id) {
+      return res.send('<script>alert("본인이 작성한 글만 수정할 수 있습니다."); history.back();</script>');
+    }
+
+    res.send(`
+      ${await getHeaderHTML(req)}
+      <h2>게시글 수정</h2>
+      <form action="/board/${req.params.slug}/post/${post.id}/edit" method="POST">
+        <label>제목:</label><br>
+        <input type="text" name="title" value="${post.title}" required><br><br>
+        <label>내용:</label><br>
+        <textarea name="content" rows="10" required>${post.content}</textarea><br><br>
+        <button type="submit">수정 완료</button>
+        <a href="/board/${req.params.slug}/post/${post.id}">취소</a>
+      </form>
+    `);
+  } catch (err) {
+    res.status(500).send('DB Error');
+  }
+});
