@@ -1,18 +1,18 @@
 const express = require('express');
 const { Pool } = require('pg');
-const session = require('express-session'); // 세션 패키지 추가
+const session = require('express-session');
 
 const app = express();
 const port = process.env.PORT || 3000;
 
 app.use(express.urlencoded({ extended: true }));
 
-// 세션 설정 (메모리에 로그인 증표를 임시 저장)
+// 세션 설정
 app.use(session({
-  secret: 'secret-key-aift', // 세션 암호화 키
+  secret: 'secret-key-aift',
   resave: false,
   saveUninitialized: false,
-  cookie: { maxAge: 60000 * 30 } // 30분 동안 로그인 유지
+  cookie: { maxAge: 60000 * 30 }
 }));
 
 const pool = new Pool({
@@ -20,13 +20,12 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }
 });
 
-// [공통 로직] 네비게이션 헤더 (로그인 상태에 따라 다르게 표시)
+// [공통 로직] 네비게이션 헤더
 async function getHeaderHTML(req) {
   try {
     const boardResult = await pool.query('SELECT name, slug FROM boards ORDER BY id ASC');
     let boardLinks = boardResult.rows.map(b => `<a href="/board/${b.slug}">${b.name}</a>`).join(' | ');
     
-    // 로그인 여부에 따른 우측 상단 메뉴 분기
     let authStatus = '';
     if (req.session.user) {
       authStatus = `<span style="float:right;">👤 <b>${req.session.user.name}</b>님 환영합니다! | <a href="/logout">로그아웃</a></span>`;
@@ -39,7 +38,8 @@ async function getHeaderHTML(req) {
         ${authStatus}
         <h1><a href="/" style="text-decoration:none; color:black;">🏛️ 통합 커뮤니티</a></h1>
         <nav>
-          <a href="/">홈(사용자목록)</a> | ${boardLinks}
+          <a href="/">홈(사용자목록)</a> |
+          ${boardLinks}
         </nav>
       </header>
       <hr>
@@ -49,12 +49,98 @@ async function getHeaderHTML(req) {
   }
 }
 
+// 시간 포맷팅 함수 (한국 시간 기준 보기 편하게 변경)
+function formatDate(dateString) {
+  if (!dateString) return '';
+  const d = new Date(dateString);
+  return d.toLocaleString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
 // 1. 메인 페이지
 app.get('/', async (req, res) => {
   try {
     const header = await getHeaderHTML(req);
     const result = await pool.query('SELECT name FROM aift ORDER BY id DESC');
     let userList = result.rows.map(row => `<li>${row.name}</li>`).join('');
+
+    res.send(`
+      ${header}
+      <h2>현재 가입된 가입자 목록</h2>
+      <ul>${userList || '가입된 사용자가 없습니다.'}</ul>
+    `);
+  } catch (err) {
+    res.status(500).send(`오류: ${err.message}`);
+  }
+});
+
+// 2. 회원가입 페이지
+app.get('/add-user', async (req, res) => {
+  const header = await getHeaderHTML(req);
+  res.send(`
+    ${header}
+    <h2>📝 회원 가입</h2>
+    <form action="/add-user" method="POST" style="max-width:300px; display:flex; flex-direction:column; gap:10px;">
+      <input type="text" name="userName" placeholder="사용할 아이디" required>
+      <input type="password" name="password" placeholder="비밀번호" required>
+      <button type="submit">가입하기</button>
+    </form>
+  `);
+});
+
+// 3. 회원가입 처리
+app.post('/add-user', async (req, res) => {
+  const { userName, password } = req.body;
+  try {
+    await pool.query('INSERT INTO aift (name, password) VALUES ($1, $2)', [userName, password]);
+    res.send(`<script>alert("가입 성공! 로그인해 주세요."); location.href="/login";</script>`);
+  } catch (err) {
+    res.status(500).send(`가입 오류 (아이디 중복 가능성): ${err.message}`);
+  }
+});
+
+// 4. 로그인 페이지
+app.get('/login', async (req, res) => {
+  const header = await getHeaderHTML(req);
+  res.send(`
+    ${header}
+    <h2>🔑 로그인</h2>
+    <form action="/login" method="POST" style="max-width:300px; display:flex; flex-direction:column; gap:10px;">
+      <input type="text" name="userName" placeholder="아이디" required>
+      <input type="password" name="password" placeholder="비밀번호" required>
+      <button type="submit">로그인</button>
+    </form>
+  `);
+});
+
+// 5. 로그인 처리
+app.post('/login', async (req, res) => {
+  const { userName, password } = req.body;
+  try {
+    const result = await pool.query('SELECT * FROM aift WHERE name = $1 AND password = $2', [userName, password]);
+    if (result.rows.length > 0) {
+      req.session.user = { id: result.rows[0].id, name: result.rows[0].name };
+      res.redirect('/');
+    } else {
+      res.send(`<script>alert("아이디 또는 비밀번호가 틀렸습니다."); history.back();</script>`);
+    }
+  } catch (err) {
+    res.status(500).send(`로그인 오류: ${err.message}`);
+  }
+});
+
+// 6. 로그아웃 처리
+app.get('/logout', (req, res) => {
+  req.session.destroy(() => res.redirect('/'));
+});
+
+// 7. 특정 게시판 목록 보기 (시간 표시 및 별 표시 추가)
+app.get('/board/:slug', async (req, res) => {
+  const { slug } = req.params;
+  try {
+    const header = await getHeaderHTML(req);
+    const boardResult = await pool.query('SELECT * FROM boards WHERE slug = $1', [slug]);
+    if (boardResult.rows.length === 0) return res.status(404).send('존재하지 않는 게시판입니다.');
+    const board = boardResult.rows[0];
 
     res.send(`
       ${header}
