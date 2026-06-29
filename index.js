@@ -1,30 +1,39 @@
-const express = require('express');
-const { Pool } = require('pg');
-const session = require('express-session');
+const express = require('express'); //
+const { Pool } = require('pg'); //
+const session = require('express-session'); //
 
 const app = express();
-const port = process.env.PORT || 3000;
+const port = process.env.PORT || 3000; //
 
-app.use(express.urlencoded({ extended: true }));
+// POST 요청의 본문(body)을 해석하기 위한 설정
+app.use(express.urlencoded({ extended: true })); //
 
-// 세션 설정
+// 세션 설정 (로그인 유지용)
 app.use(session({
   secret: 'secret-key-aift',
   resave: false,
   saveUninitialized: false,
-  cookie: { maxAge: 60000 * 30 }
+  cookie: { maxAge: 60000 * 30 } // 30분 유지
 }));
 
+// DB 연결
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
+  ssl: { rejectUnauthorized: false } //
 });
 
-// [공통 로직] 네비게이션 헤더
+// 시간 포맷팅 함수
+function formatDate(dateString) {
+  if (!dateString) return '';
+  const d = new Date(dateString);
+  return d.toLocaleString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+// [공통 로직] 상단 헤더 동적 생성
 async function getHeaderHTML(req) {
   try {
     const boardResult = await pool.query('SELECT name, slug FROM boards ORDER BY id ASC');
-    let boardLinks = boardResult.rows.map(b => `<a href="/board/${b.slug}">${b.name}</a>`).join(' | ');
+    let boardLinks = boardResult.rows.map(b => `<a href="/board/${b.slug}">${b.name}</a>`).join(' | '); //
     
     let authStatus = '';
     if (req.session.user) {
@@ -35,6 +44,69 @@ async function getHeaderHTML(req) {
 
     return `
       <header>
+        ${authStatus}
+        <h1><a href="/" style="text-decoration:none; color:black;">🏛️ 통합 커뮤니티</a></h1>
+        <nav>
+          <a href="/">홈(사용자목록)</a> |
+          ${boardLinks}
+        </nav>
+      </header>
+      <hr>
+    `;
+  } catch (err) {
+    return `<h1><a href="/">🏛️ 통합 커뮤니티</a></h1><hr>`;
+  }
+}
+
+// 1. 메인 페이지 (userList 스코프 오류 해결 완료)
+app.get('/', async (req, res) => {
+  try {
+    const header = await getHeaderHTML(req);
+    const result = await pool.query('SELECT name FROM aift ORDER BY id DESC'); //
+    let userList = result.rows.map(row => `<li>${row.name}</li>`).join('');
+
+    res.send(`
+      ${header}
+      <h2>현재 가입된 가입자 목록</h2>
+      <ul>${userList || '가입된 사용자가 없습니다.'}</ul>
+    `);
+  } catch (err) {
+    res.status(500).send(`오류: ${err.message}`);
+  }
+});
+
+// 2. 회원가입 페이지
+app.get('/add-user', async (req, res) => {
+  const header = await getHeaderHTML(req);
+  res.send(`
+    ${header}
+    <h2>📝 회원 가입</h2>
+    <form action="/add-user" method="POST" style="max-width:300px; display:flex; flex-direction:column; gap:10px;">
+      <input type="text" name="userName" placeholder="사용할 아이디" required>
+      <input type="password" name="password" placeholder="비밀번호" required>
+      <button type="submit">가입하기</button>
+    </form>
+  `);
+});
+
+// 3. 회원가입 처리
+app.post('/add-user', async (req, res) => {
+  const { userName, password } = req.body;
+  try {
+    await pool.query('INSERT INTO aift (name, password) VALUES ($1, $2)', [userName, password]);
+    res.send(`<script>alert("가입 성공! 로그인해 주세요."); location.href="/login";</script>`);
+  } catch (err) {
+    res.status(500).send(`가입 오류: ${err.message}`);
+  }
+});
+
+// 4. 로그인 페이지
+app.get('/login', async (req, res) => {
+  const header = await getHeaderHTML(req);
+  res.send(`
+    ${header}
+    <h2>🔑 로그인</h2>
+    <form action="/login"      <header>
         ${authStatus}
         <h1><a href="/" style="text-decoration:none; color:black;">🏛️ 통합 커뮤니티</a></h1>
         <nav>
